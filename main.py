@@ -53,6 +53,52 @@ def load_api_config(iniFilePath):
                                                                                   'AUTHENTICATION', 'SECRET_KEY')
     return api_config
 
+# Option for AWS secrets retrieval instead of local file
+#import boto3
+#from botocore.exceptions import ClientError    # Create a Secrets Manager client
+#    secrets_client = boto3.client('secretsmanager')
+#    
+#    try:
+#        # Retrieve the secret value from Secrets Manager
+#        get_secret_response = secrets_client.get_secret_value(SecretId=secret_name)
+#    except ClientError as e:
+#        # Handle any errors that occur when retrieving the secret value
+#        print(f"Error retrieving secret {secret_name}: {e}")
+#        return api_config
+    
+#    # Decode the secret value (which is a JSON string) into a Python dictionary
+#    secret_value_dict = json.loads(get_secret_response['SecretString'])
+    
+#    # Extract the specific values needed for the API configuration
+#    api_config['BaseURL'] = secret_value_dict['BaseURL']
+#    api_config['AccessKey'] = secret_value_dict['AccessKey']
+#    api_config['SecretKey'] = secret_value_dict['SecretKey']
+    
+#    return api_config
+#def get_secret():
+
+#    secret_name = "PrismaCloud"
+ #   region_name = "eu-west-1"
+
+#    # Create a Secrets Manager client
+ #   session = boto3.session.Session()
+ #   client = session.client(
+ #       service_name='secretsmanager',
+ #       region_name=region_name
+ #   )
+
+ #   try:
+  #      get_secret_value_response = client.get_secret_value(
+   #         SecretId=secret_name
+   #     )
+  #  except ClientError as e:
+ #       # For a list of exceptions thrown, see
+ #       # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+ #       raise e
+
+ #   # Decrypts secret using the associated KMS key.
+ #   secret = get_secret_value_response['SecretString']
+
 
 def handle_api_response(apiResponse):
     status = apiResponse.status_code
@@ -101,6 +147,7 @@ def get_account_groups(api_config):
     apiResponse = run_api_call_without_payload(action, url, headers)
     accountGroups = json.loads(apiResponse.text)
     return accountGroups
+    print(accountGroups)
 
 
 def update_account_group(api_config, accountGroupName, accountGroupId, accountIds, description):
@@ -292,6 +339,7 @@ def create_account_groups_based_cloudAccounts(api_config, cloudAccountList, acco
     defaultAccountGroup = get_accountGroupData_from_accountGroupList_by_name_equals("Default Account Group",
                                                                                     accountGroupsList)
     for cloudAccount in cloudAccountList:
+        # specify your cloud account group prefix here (e.g. custom_), if required, use the same prefix in assign_account_groups_based_cloudAccounts
         NewAccountGroupName = "custom_" + cloudAccount["name"].split()[0]
         if NewAccountGroupName not in AccountGroupNameList:
             AccountGroupNameList.append(NewAccountGroupName)
@@ -320,6 +368,7 @@ def assign_account_groups_based_cloudAccounts(api_config, cloudAccountList, acco
     defaultAccountGroup = get_accountGroupData_from_accountGroupList_by_name_equals("Default Account Group",
                                                                                     accountGroupsList)
     for cloudAccount in cloudAccountList:
+        # specify your cloud account group prefix here (e.g. custom_), if required
         accountGroupName = "custom_" + cloudAccount["name"].split()[0]
         accountGroup = get_accountGroupData_from_accountGroupList_by_name_equals(accountGroupName, accountGroupsList)
         accountId = cloudAccount['accountId']
@@ -329,7 +378,7 @@ def assign_account_groups_based_cloudAccounts(api_config, cloudAccountList, acco
             print("The Account Group " + accountGroupName + " is assigned to the cloud Account " + cloudAccount['name'])
             update_account_group(api_config, accountGroupName, accountGroup['id'], accountIds,
                                  "Account Group created for Service type " + cloudAccount["name"].split()[0])
-            delete_account_from_account_group(api_config, cloudAccount, defaultAccountGroup)
+            #delete_account_from_account_group(api_config, cloudAccount, defaultAccountGroup)
 
 
 def main():
@@ -344,33 +393,42 @@ def main():
 
     # ----------- Naming Convention -----------
 
-    nameConvention = "([a-zA-Z0-9]*)[_ ]Subscription*"
+    #nameConvention = "([a-zA-Z0-9]*)[_ ]Subscription*"
+    # !!! use naming convention variable here to match your specific account name regex for Account group creation and assignments
+    nameConvention = "ok*"
 
     # ----------- Get Account Groups and Cloud Accounts -----------
+    # chose your cloud provider aws or azure and uncomment relevant code, azure is currently commented out to work on aws accounts only
 
     accountGroupsList = get_account_groups(api_config)
     cloudAccountList = get_cloud_accounts(api_config)
 
     # ----------- Get org Accounts based on Cloud Accounts and cloud type-----------
 
-    azureCloudAccountList = get_cloud_accounts_by_cloud_type(cloudAccountList, 'azure')
-    azureAllOrgAccountList = get_all_org_cloud_account_per_cloud_type(api_config, azureCloudAccountList, 'azure')
+    #azureCloudAccountList = get_cloud_accounts_by_cloud_type(cloudAccountList, 'azure')
+    awsCloudAccountList = get_cloud_accounts_by_cloud_type(cloudAccountList, 'aws')
+    #azureAllOrgAccountList = get_all_org_cloud_account_per_cloud_type(api_config, azureCloudAccountList, 'azure')
+    awsAllOrgAccountList = get_all_org_cloud_account_per_cloud_type(api_config, awsCloudAccountList, 'aws')
 
     # ----------- Filter all cloud accounts in a cloud Type based on the name convention-----------
 
-    (azureOrgAccountsMatching, azureOrgAccountsNotMatching) = get_all_org_cloud_account_based_name_convention(
-        azureAllOrgAccountList, nameConvention)
-
+    #(azureOrgAccountsMatching, azureOrgAccountsNotMatching) = get_all_org_cloud_account_based_name_convention(
+     #   azureAllOrgAccountList, nameConvention)
+    (awsOrgAccountsMatching, awsOrgAccountsNotMatching) = get_all_org_cloud_account_based_name_convention(
+        awsAllOrgAccountList, nameConvention)
     # ----------- List of cloud accounts that doesn't have a matching Account Group-----------
-    newAzureAccountList = get_cloud_accounts_not_having_acount_group(azureOrgAccountsMatching, accountGroupsList)
+    #newAzureAccountList = get_cloud_accounts_not_having_acount_group(azureOrgAccountsMatching, accountGroupsList)
+    newAwsAccountList = get_cloud_accounts_not_having_acount_group(awsOrgAccountsMatching, accountGroupsList)
 
     # ----------- Create missing account groups and assign them to the source Cloud Account filtered by cloud Type-----------
 
-    create_account_groups_based_cloudAccounts(api_config, newAzureAccountList, accountGroupsList)
+    #create_account_groups_based_cloudAccounts(api_config, newAzureAccountList, accountGroupsList)
+    create_account_groups_based_cloudAccounts(api_config, newAwsAccountList, accountGroupsList)
 
-    # ----------- do a recursive lookup in all cloud accounts of a cloudType matching the name convention and assign them to the corresponding Account Group-----------
+    # ----------- do a recursive lookup in all cloud accounts of a cloudType matching the name convention specified by nameConvention variable and assign them to the corresponding Account Group-----------
     accountGroupsList = get_account_groups(api_config)
-    assign_account_groups_based_cloudAccounts(api_config, azureOrgAccountsMatching, accountGroupsList)
+    #assign_account_groups_based_cloudAccounts(api_config, azureOrgAccountsMatching, accountGroupsList)
+    assign_account_groups_based_cloudAccounts(api_config, awsOrgAccountsMatching, accountGroupsList)
 
 
 if __name__ == "__main__":
